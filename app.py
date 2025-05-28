@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 import streamlit as st
 import fitz
-from llama_index.readers.file import PyMuPDFReader
 from llama_index.embeddings.fireworks import FireworksEmbedding
 from llama_index.llms.fireworks import Fireworks
 from llama_index.core import VectorStoreIndex, Document
@@ -17,28 +16,42 @@ st.title("ParserCV")
 
 uploaded_file = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
 
+# Function to extract text with inline links
+def extract_text_with_inline_links(pdf_bytes):
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    full_text_lines = []
+
+    for page in doc:
+        words = page.get_text("words")
+        links = page.get_links()
+
+        link_map = [
+            (fitz.Rect(link["from"]), link["uri"])
+            for link in links if "uri" in link
+        ]
+
+        page_words = []
+        for word in words:
+            word_rect = fitz.Rect(word[:4])
+            word_text = word[4]
+
+            for link_rect, uri in link_map:
+                if link_rect.intersects(word_rect):
+                    word_text += f" <{uri}>"
+                    break
+
+            page_words.append(word_text)
+
+        full_text_lines.append(" ".join(page_words))
+
+    return "\n".join(full_text_lines)
+
 file_path = None
 if uploaded_file:
-    # Save uploaded file to local 'resumes' directory
-    # resumes_dir = "resumes"
-    # os.makedirs(resumes_dir, exist_ok=True)
-    # file_path = os.path.join(resumes_dir, uploaded_file.name)
-    # with open(file_path, "wb") as f:
-    #     f.write(uploaded_file.getbuffer())
-
     with st.spinner("Processing resume..."):
-        # # Load PDF
-        # loader = PyMuPDFReader()
-        # documents = loader.load(file_path=file_path)  # use saved file path
-        
         pdf_bytes = uploaded_file.read()
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        doc.close()
+        text = extract_text_with_inline_links(pdf_bytes)
 
-        # Prepare document for LlamaIndex (as a list of dicts)
         documents = [Document(text=text)]
 
         # Setup embedding and LLM
